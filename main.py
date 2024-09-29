@@ -17,8 +17,14 @@ from requests.packages.urllib3.util.retry import Retry
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
-countries = ["uk", "au", "be", "ca", "cl", "cr", "do", "ec", "sv", "fr", "de", "gt", "ie", "jp", "ke", "mx", "nl", "nz", "pa", "pl", "pt", "za", "es", "lk", "se", "ch", "tw", "gb"]
+# Define the list of countries to scrape
+countries = [
+    "uk", "au", "be", "ca", "cl", "cr", "do", "ec", "sv", "fr",
+    "de", "gt", "ie", "jp", "ke", "mx", "nl", "nz", "pa", "pl",
+    "pt", "za", "es", "lk", "se", "ch", "tw", "gb"
+]
 
+# List of user agents for web requests
 user_agents = [
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
     "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/14.1.1 Safari/605.1.15",
@@ -42,6 +48,8 @@ user_agents = [
     "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/94.0.4606.81 Safari/537.36"
 ]
 
+
+# Command line argument parsing
 parser = argparse.ArgumentParser(description="Scrape Uber Eats data")
 parser.add_argument("--country", "-c", type=str, nargs='+', help="Scrape data from specific countries. If not specified, all countries will be scraped.", metavar="")
 parser.add_argument("--threads", "-t", type=int, default=5, help="Number of threads to use for scraping")
@@ -50,14 +58,18 @@ args = parser.parse_args()
 # Global variables
 current_file = None
 cancel_requested = False
+start_time = None
 
 def get_random_user_agent() -> str:
+    """Returns a random user agent from the list."""
     return random.choice(user_agents)
 
-def clear():
+def clear_console():
+    """Clears the console screen."""
     os.system('cls' if os.name == 'nt' else 'clear')
 
 def cleanup_json_file():
+    """Cleans up the current JSON file by removing trailing commas."""
     global current_file
     if current_file:
         try:
@@ -75,28 +87,40 @@ def cleanup_json_file():
             logger.error(f"Error cleaning up JSON file {current_file}: {e}")
 
 def interrupt_handler(signum, frame):
+    """Handles keyboard interrupts (Ctrl+C) to gracefully stop the scraper."""
     global cancel_requested
     cancel_requested = True
-    print("\nInterrupt received. Cancelling the scraping process...")
+    logger.info("\nInterrupt received. Cancelling the scraping process...")
     cleanup_json_file()
+
+    # Log the summary before exiting
+    if start_time is not None:
+        end_time = time.time()
+        elapsed_time = end_time - start_time
+        logger.info(f"Scraping ended at: {time.ctime(end_time)}")
+        logger.info(f"Total elapsed time: {elapsed_time:.2f} seconds.")
+    
     sys.exit(0)
 
 # Register the interrupt handler
 signal.signal(signal.SIGINT, interrupt_handler)
 
 def load_existing_data(file_path: str) -> Dict:
+    """Loads existing data from the JSON file."""
     if os.path.exists(file_path):
         with open(file_path, "r", encoding="utf-8") as file:
             return json.load(file)
     return {"country": "", "cities": []}
 
 def save_data(file_path: str, data: Dict):
+    """Saves data to the specified JSON file."""
     global current_file
     current_file = file_path
     with open(file_path, "w", encoding="utf-8") as file:
         json.dump(data, file, indent=4)
 
 def get_session():
+    """Creates a session with retry logic."""
     session = requests.Session()
     retry = Retry(total=3, backoff_factor=0.1, status_forcelist=[500, 502, 503, 504])
     adapter = HTTPAdapter(max_retries=retry)
@@ -105,13 +129,14 @@ def get_session():
     return session
 
 def scrape_city(city_url: str, city_name: str, headers: Dict) -> List[Dict]:
+    """Scrapes city-specific Uber Eats data."""
     global cancel_requested
     shops = []
     try:
         if cancel_requested:
             return shops
 
-        time.sleep(random.uniform(0.5, 1.5))
+        time.sleep(random.uniform(0.5, 1.5))  # Random sleep to avoid getting blocked
         session = get_session()
         city_response = session.get(city_url, headers=headers, timeout=10)
         city_response.raise_for_status()
@@ -135,43 +160,39 @@ def scrape_city(city_url: str, city_name: str, headers: Dict) -> List[Dict]:
         logger.error(f"An error occurred while scraping {city_name}: {e}")
     return shops
 
-def scrape_country(c: str):
+def scrape_country(country_code: str):
+    """Scrapes Uber Eats data for all cities in a given country."""
     global cancel_requested
     if cancel_requested:
         return
 
-    if c == "uk":
-        c = "gb"  # Use "gb" for API calls if "uk" is provided
+    if country_code == "uk":
+        country_code = "gb"  # Use "gb" for UK
 
-    headers = {
-        "User-Agent": get_random_user_agent()
-    }
+    headers = {"User-Agent": get_random_user_agent()}
+    time.sleep(random.uniform(0.5, 1.5))  # Random sleep
 
-    time.sleep(random.uniform(0.5, 1.5))
+    # Fetch country information
     try:
         session = get_session()
-        response = session.get(f"https://restcountries.com/v3.1/alpha/{c}?fields=name", headers=headers, timeout=10)
+        response = session.get(f"https://restcountries.com/v3.1/alpha/{country_code}?fields=name", headers=headers, timeout=10)
         response.raise_for_status()
         country_info = response.json()
-        if isinstance(country_info, list) and len(country_info) > 0:
-            country = country_info[0].get("name", {}).get("common", c.upper())
-        else:
-            country = country_info.get("name", {}).get("common", c.upper())
+        country = country_info[0]["name"]["common"] if isinstance(country_info, list) else country_code.upper()
     except requests.exceptions.RequestException as e:
-        logger.error(f"Error fetching country info for {c}: {e}")
-        country = c.upper()
-    except (KeyError, IndexError, ValueError) as e:
-        logger.error(f"Error parsing country info for {c}: {e}")
-        country = c.upper()
+        logger.error(f"Error fetching country info for {country_code}: {e}")
+        country = country_code.upper()
 
-    file_path = f"countries/{c}.json"
+    # Load existing data
+    file_path = f"countries/{country_code}.json"
     data = load_existing_data(file_path)
     data["country"] = country
     logger.info(f"Scraping {country}...")
 
-    url = f"https://www.ubereats.com/{c}/location"
+    # Scrape cities from the country
+    url = f"https://www.ubereats.com/{country_code}/location"
     try:
-        time.sleep(random.uniform(0.5, 1.5))
+        time.sleep(random.uniform(0.5, 1.5))  # Random sleep
         session = get_session()
         response = session.get(url, headers=headers, timeout=10)
         response.raise_for_status()
@@ -188,7 +209,7 @@ def scrape_country(c: str):
             return
         href = link.get('href')
         name = link.get_text().strip()
-        if href and href.startswith(f"/{c}/city"):
+        if href and href.startswith(f"/{country_code}/city"):
             city_url = f"https://www.ubereats.com{href}"
             # Check if the city has already been scraped
             existing_city = next((city for city in data["cities"] if city["city"] == name), None)
@@ -197,6 +218,7 @@ def scrape_country(c: str):
                 continue
             cities_to_scrape.append((city_url, name))
 
+    # Scrape each city in parallel using threads
     try:
         with ThreadPoolExecutor(max_workers=args.threads) as executor:
             future_to_city = {executor.submit(scrape_city, city_url, name, headers): (city_url, name) for city_url, name in cities_to_scrape}
@@ -225,40 +247,24 @@ def scrape_country(c: str):
             logger.info(f"All data for {country} has been saved to {file_path}")
 
 if __name__ == "__main__":
-    os.makedirs('countries', exist_ok=True)
+    # Handle countries from arguments
+    countries_to_scrape = args.country if args.country else countries
+    invalid_countries = [code for code in countries_to_scrape if code not in countries]
 
-    if args.country is None:
-        clear()
-        logger.info("Scraping all countries...")
-        countries_to_scrape = countries
-    else:
-        countries_to_scrape = [c.lower() for c in args.country if c.lower() in countries]
-        invalid_countries = [c for c in args.country if c.lower() not in countries]
-        if invalid_countries:
-            logger.warning(f"Invalid country code(s): {', '.join(invalid_countries)}")
-            logger.info(f"Valid country codes are: {', '.join(sorted(set(countries)))}")
-        if not countries_to_scrape:
-            logger.error("No valid countries to scrape. Exiting.")
-            sys.exit(1)
+    if invalid_countries:
+        logger.warning(f"Invalid country codes provided: {', '.join(invalid_countries)}")
 
-    clear()
-    logger.info(f"Scraping the following countries: {', '.join(countries_to_scrape)}")
+    # Start time logging
+    start_time = time.time()
+    logger.info(f"Scraping started at: {time.ctime(start_time)}")
 
-    try:
-        with ThreadPoolExecutor(max_workers=args.threads) as executor:
-            futures = list(executor.map(scrape_country, countries_to_scrape))
-            
-            while not all(future.done() for future in futures):
-                if cancel_requested:
-                    break
-                time.sleep(0.1)
-    except Exception as e:
-        logger.error(f"An unexpected error occurred: {e}")
-    finally:
-        cleanup_json_file()
+    for country_code in countries_to_scrape:
         if cancel_requested:
-            logger.info("Scraping process was cancelled by the user.")
-        else:
-            logger.info("Scraping completed for all specified countries.")
+            break
+        scrape_country(country_code)
 
-    sys.exit(0)
+    # End time logging
+    end_time = time.time()
+    elapsed_time = end_time - start_time
+    logger.info(f"Scraping ended at: {time.ctime(end_time)}")
+    logger.info(f"Total elapsed time: {elapsed_time:.2f} seconds.")
