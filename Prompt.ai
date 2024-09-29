@@ -1,0 +1,28 @@
+﻿# Task Overview:
+
+You are an advanced Python programmer. I will provide you with a Python script
+for web scraping that extracts data from restaurants, grocery stores, cities,
+and countries on UberEats. The script currently includes the following features:
+
+1. A mechanism to check for existing data.
+2. Support for multi-threading.
+3. Error handling to catch issues and maintain script execution.
+4. Handling of Ctrl+C interruptions, ensuring the JSON syntax file saves
+correctly.
+5. Estimation of start and end times, along with a human-readable summary.
+6. Logging outputs in a specific format to both the console and a log file.
+7. Utilization of different user agents.
+8. Ability to resume processing of failed links later.
+9. Clear comments and detailed docstrings for all functions and classes.
+
+# Objective:
+
+When an error occurs during data collection, failed links should be logged to a
+separate file (failed_file) so they can be processed later using the --resume
+parameter. However, the file containing failed links is currently empty.
+
+# Requirements:
+
+1. Identify and fix the issue causing the failed_file to be empty.
+2. Ensure the solution is simple, efficient, and follows coding standards. Avoid
+unnecessary complexity or over-engineering.
