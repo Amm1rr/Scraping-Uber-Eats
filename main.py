@@ -1,8 +1,6 @@
-import argparse
 import datetime
 import json
 import logging
-import logging.config
 import os
 import random
 import signal
@@ -16,57 +14,14 @@ from bs4 import BeautifulSoup
 from requests.adapters import HTTPAdapter
 from requests.packages.urllib3.util.retry import Retry
 
-# Logging configuration
-LOGGING_CONFIG = {
-    'version': 1,
-    'disable_existing_loggers': False,
-    'formatters': {
-        'detailed': {
-            'format': '%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-        },
-        'simple': {
-            'format': '%(levelname)s - %(message)s',
-        },
-    },
-    'handlers': {
-        'file_handler': {
-            'class': 'logging.FileHandler',
-            'filename': 'scraping.log',
-            'formatter': 'detailed',
-            'level': logging.INFO,
-        },
-        'console_handler': {
-            'class': 'logging.StreamHandler',
-            'formatter': 'simple',
-            'level': logging.INFO,
-        },
-    },
-    'loggers': {
-        '': {  # root logger
-            'handlers': ['file_handler'],
-            'level': logging.INFO,
-            'propagate': False,
-        },
-        'console': {
-            'handlers': ['console_handler'],
-            'level': logging.INFO,
-            'propagate': False,
-        },
-    },
-}
-
+from config import COUNTRIES
+import config
+import utils
 
 # Disable the warnings from urllib3
 # Raise the logging level for urllib3 to suppress the "Retrying" messages
 # requests.packages.urllib3.disable_warnings()
 logging.getLogger("urllib3.connectionpool").setLevel(logging.ERROR)
-
-def setup_logging(args):
-    if args.debug:
-        LOGGING_CONFIG['handlers']['file_handler']['level'] = logging.DEBUG
-        LOGGING_CONFIG['loggers']['']['level'] = logging.DEBUG
-
-    logging.config.dictConfig(LOGGING_CONFIG)
 
 class VerboseFilter(logging.Filter):
     def __init__(self, verbose):
@@ -76,45 +31,7 @@ class VerboseFilter(logging.Filter):
     def filter(self, record):
         return self.verbose
 
-# Constants
-COUNTRIES = [
-    "uk", "au", "be", "ca", "cl", "cr", "do", "ec", "sv", "fr",
-    "de", "gt", "ie", "jp", "ke", "mx", "nl", "nz", "pa", "pl",
-    "pt", "za", "es", "lk", "se", "ch", "tw", "gb"
-]
 
-USER_AGENTS = [
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
-    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/14.1.1 Safari/605.1.15",
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:89.0) Gecko/20100101 Firefox/89.0",
-    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.114 Safari/537.36",
-    "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.101 Safari/537.36",
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/92.0.4515.107 Safari/537.36",
-    "Mozilla/5.0 (Macintosh; Intel Mac OS X 11_0_0) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/92.0.4515.107 Safari/537.36",
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:90.0) Gecko/20100101 Firefox/90.0",
-    "Mozilla/5.0 (Macintosh; Intel Mac OS X 11_0_0) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/14.1.1 Safari/605.1.15",
-    "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/92.0.4515.107 Safari/537.36",
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/93.0.4577.82 Safari/537.36",
-    "Mozilla/5.0 (Macintosh; Intel Mac OS X 11_1_0) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/93.0.4577.82 Safari/537.36",
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:91.0) Gecko/20100101 Firefox/91.0",
-    "Mozilla/5.0 (Macintosh; Intel Mac OS X 11_1_0) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/14.1.1 Safari/605.1.15",
-    "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/93.0.4577.82 Safari/537.36",
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/94.0.4606.81 Safari/537.36",
-    "Mozilla/5.0 (Macintosh; Intel Mac OS X 12_0_0) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/94.0.4606.81 Safari/537.36",
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:92.0) Gecko/20100101 Firefox/92.0",
-    "Mozilla/5.0 (Macintosh; Intel Mac OS X 12_0_0) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/14.1.1 Safari/605.1.15",
-    "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/94.0.4606.81 Safari/537.36"
-]
-
-# Command line argument parsing function
-def parse_arguments():
-    parser = argparse.ArgumentParser(description="Scrape Uber Eats data")
-    parser.add_argument("--country", "-c", type=str, nargs='+', help="Scrape data from specific countries. If not specified, all countries will be scraped.", metavar="")
-    parser.add_argument("--threads", "-t", type=int, default=5, help="Number of threads to use for scraping")
-    parser.add_argument("--resume",  "-r", action="store_true", help="Resume scraping from failed links")
-    parser.add_argument("--verbose", "-v", action="store_true", help="Enable verbose output")
-    parser.add_argument("--debug",   "-d", action="store_true", help="Enable detailed logging and error tracing for debugging purposes.")
-    return parser.parse_args()
 
 class GlobalConfig:
     current_file:       str   = None
@@ -131,8 +48,14 @@ def exit_program(error_number = 0):
         if GlobalConfig.start_time:
             end_time = time.time()
             elapsed_time = end_time - GlobalConfig.start_time
-            logging.info(f"{'Total elapsed time: ':<30} {elapsed_time:.2f} seconds.")
-            logging.info(f"{'Scraping ended at:':<30} {time.ctime(end_time)}")
+            
+            msg = f"{'Total elapsed time: ':<30} {elapsed_time:.2f} seconds"
+            logging.info(msg)
+            print_to_console(msg)
+            
+            msg = f"{'Scraping ended at:':<30} {time.ctime(end_time)}"
+            logging.info(msg)
+            print_to_console(msg)
         
         exit(error_number)
     else:
@@ -142,7 +65,7 @@ def exit_program(error_number = 0):
 
 def get_random_user_agent() -> str:
     """Returns a random user agent from the list."""
-    return random.choice(USER_AGENTS)
+    return random.choice(config.USER_AGENTS)
 
 def cleanup_json_file():
     """Cleans up the current JSON file by removing trailing commas."""
@@ -150,7 +73,7 @@ def cleanup_json_file():
         try:
             with open(GlobalConfig.current_file, 'r+') as f:
                 content = f.read().rstrip().rstrip(',')
-                if content.endswith('{') or content.endswith('[') or content.endswith(','):
+                if content.endswith('{') or content.endswith('['):
                     content = content[:-1]
                 elif not (content.endswith('}') or content.endswith(']')):
                     content += '}'
@@ -158,8 +81,10 @@ def cleanup_json_file():
                 f.write(content)
                 f.truncate()
             
-            logging.info(f"Successfully cleaned up JSON file: {GlobalConfig.current_file}")
-            logging.info(f"----- Summary : ")
+            msg = f"Successfully cleaned up JSON file: {GlobalConfig.current_file}"
+            logging.info(msg)
+            msg = f"\t----- Summary : "
+            logging.info(msg)
             
         except Exception as e:
             logging.error(f"Error cleaning up JSON file {GlobalConfig.current_file}: {e}")
@@ -184,9 +109,21 @@ def log_summary():
         formatted_elapsed_time = f"{hours:02}:{minutes:02}:{seconds:02}"
 
         # Aligning output
-        logging.info(f"{'Estimating, Start Time:':<30} {formatted_start_time}")
-        logging.info(f"{'Estimating, End Time:':<30} {formatted_end_time}")
-        logging.info(f"{'Estimating, Duration:':<30} {formatted_elapsed_time}")
+        
+        print_to_console(f"\n\nSuccessfully cleaned up JSON file: {GlobalConfig.current_file}")
+        print_to_console(f"\t----- Summary : ")
+        
+        msg = f"{'Estimating, Start Time:':<30} {formatted_start_time}"
+        logging.info(msg)
+        print_to_console(msg)
+        
+        msg = f"{'Estimating, End Time:':<30} {formatted_end_time}"
+        logging.info(msg)
+        print_to_console(msg)
+        
+        msg = f"{'Estimating, Elapsed Time:':<30} {formatted_elapsed_time}"
+        logging.info(msg)
+        print_to_console(msg)
 
 def interrupt_handler(signum, frame):
     """Handles keyboard interrupts (Ctrl+C) to gracefully stop the scraper."""
@@ -579,7 +516,9 @@ def scrape_country(country_code: str):
         log_failed_link(normalized_country_code, country, url)
     finally:
         if GlobalConfig.cancel_requested:
-            logging.info(f"{'Scraping for ' + country:<30} was cancelled.")
+            msg = f"{'Scraping for ' + country:<30} was cancelled."
+            logging.info(msg)
+            print_to_console(msg)
         else:
             logging.info(f"All data for {country} has been saved to {file_path}")
 
@@ -646,8 +585,8 @@ def Input_Country():
             exit_program(0)
 
 if __name__ == "__main__":
-    args = parse_arguments()
-    setup_logging(args)
+    args = utils.parse_arguments()
+    config.setup_logging(args)
     Console_log(args)
     print_initial_info(args)
     
