@@ -18,21 +18,6 @@ from config import COUNTRIES
 import config
 import utils
 
-# Disable the warnings from urllib3
-# Raise the logging level for urllib3 to suppress the "Retrying" messages
-# requests.packages.urllib3.disable_warnings()
-logging.getLogger("urllib3.connectionpool").setLevel(logging.ERROR)
-
-class VerboseFilter(logging.Filter):
-    def __init__(self, verbose):
-        super().__init__()
-        self.verbose = verbose
-
-    def filter(self, record):
-        return self.verbose
-
-
-
 class GlobalConfig:
     current_file:       str   = None
     cancel_requested:   bool  = False
@@ -42,20 +27,22 @@ class GlobalConfig:
     data: Dict[str, any] = {"country": "", "cities": []}
 
 
-def exit_program(error_number = 0):
+def exit_program(error_number = 0, show_message = True):
     # End time logging
     if error_number == 0:
         if GlobalConfig.start_time:
             end_time = time.time()
             elapsed_time = end_time - GlobalConfig.start_time
             
-            msg = f"{'Total elapsed time: ':<30} {elapsed_time:.2f} seconds"
-            logging.info(msg)
-            print_to_console(msg)
-            
-            msg = f"{'Scraping ended at:':<30} {time.ctime(end_time)}"
-            logging.info(msg)
-            print_to_console(msg)
+            msg = [
+            f"{'Total elapsed time: ':<30} {elapsed_time:.2f} seconds",
+            f"{'Scraping ended at:':<30} {time.ctime(end_time)}"
+            ]
+
+            for message in msg:
+                logging.info(message)
+                if show_message:
+                    print_to_console(message)
         
         exit(error_number)
     else:
@@ -81,11 +68,13 @@ def cleanup_json_file():
                 f.write(content)
                 f.truncate()
             
-            msg = f"Successfully cleaned up JSON file: {GlobalConfig.current_file}"
-            logging.info(msg)
-            msg = f"\t----- Summary : "
-            logging.info(msg)
+            msg = [
+            f"Successfully cleaned up JSON file: {GlobalConfig.current_file}"
+            ]
             
+            for message in msg:
+                logging.info(message)
+        
         except Exception as e:
             logging.error(f"Error cleaning up JSON file {GlobalConfig.current_file}: {e}")
 
@@ -110,20 +99,18 @@ def log_summary():
 
         # Aligning output
         
-        print_to_console(f"\n\nSuccessfully cleaned up JSON file: {GlobalConfig.current_file}")
-        print_to_console(f"\t----- Summary : ")
+        messages = [
+            f"\n\t----- Summary : ",
+            f"{'Estimating, Start Time:':<30} {formatted_start_time}",
+            f"{'Estimating, End Time:':<30} {formatted_end_time}",
+            f"{'Estimating, Elapsed Time:':<30} {formatted_elapsed_time}",
+        ]
         
-        msg = f"{'Estimating, Start Time:':<30} {formatted_start_time}"
-        logging.info(msg)
-        print_to_console(msg)
+        messages += [f"{'Scraping ' :<30} was cancelled."] if GlobalConfig.cancel_requested else []
         
-        msg = f"{'Estimating, End Time:':<30} {formatted_end_time}"
-        logging.info(msg)
-        print_to_console(msg)
-        
-        msg = f"{'Estimating, Elapsed Time:':<30} {formatted_elapsed_time}"
-        logging.info(msg)
-        print_to_console(msg)
+        for msg in messages:
+            logging.info(msg)
+            print_to_console(msg)
 
 def interrupt_handler(signum, frame):
     """Handles keyboard interrupts (Ctrl+C) to gracefully stop the scraper."""
@@ -135,7 +122,7 @@ def interrupt_handler(signum, frame):
     # Log the summary before exiting
     log_summary()  # Call the new summary logging function
 
-    exit_program(0)  # Exit the program gracefully
+    exit_program(0, False)  # Exit the program gracefully
 
 # Register the interrupt handler
 signal.signal(signal.SIGINT, interrupt_handler)
@@ -515,18 +502,14 @@ def scrape_country(country_code: str):
         logging.error(f"Scrape_Country:Get City : An error occurred while processing country {country}: {exc}")
         log_failed_link(normalized_country_code, country, url)
     finally:
-        if GlobalConfig.cancel_requested:
-            msg = f"{'Scraping for ' + country:<30} was cancelled."
-            logging.info(msg)
-            print_to_console(msg)
-        else:
+        if not GlobalConfig.cancel_requested:
             logging.info(f"All data for {country} has been saved to {file_path}")
 
 def Console_log(args):
     console_handler = logging.StreamHandler()
     console_handler.setLevel(logging.INFO)
     console_handler.setFormatter(logging.Formatter('%(levelname)s - %(message)s'))
-    console_handler.addFilter(VerboseFilter(args.verbose))
+    console_handler.addFilter(config.VerboseFilter(args.verbose))
     logging.getLogger('').addHandler(console_handler)
 
 def print_initial_info(args):
@@ -582,7 +565,7 @@ def Input_Country():
             return country_codes
         else:
             print("\nExiting...")
-            exit_program(0)
+            exit_program(0, True)
 
 if __name__ == "__main__":
     args = utils.parse_arguments()
@@ -640,4 +623,4 @@ if __name__ == "__main__":
                 break
             scrape_country(country_code)
 
-    exit_program(0)
+    exit_program(0, False)
