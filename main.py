@@ -518,6 +518,50 @@ class VerboseFilter(logging.Filter):
     def filter(self, record):
         return self.verbose
 
+def Input_Country():
+    def get_key():
+        if sys.platform.startswith('win'):
+            import msvcrt
+            return msvcrt.getch().decode('utf-8').lower()
+        else:
+            import termios
+            import tty
+            fd = sys.stdin.fileno()
+            old_settings = termios.tcgetattr(fd)
+            try:
+                tty.setraw(sys.stdin.fileno())
+                ch = sys.stdin.read(1)
+            finally:
+                termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
+            return ch.lower()
+    
+    while True:
+        user_input = input("Please enter at least one country code or a list of countries separated by space (e.g., uk de): ").strip().lower()
+        if user_input:
+            country_codes = user_input.split()
+            if country_codes:
+                break
+            else:
+                print("Invalid input. Please enter at least one country code.")
+        else:
+            print("No input provided. Please try again.")
+    
+    prompt = f"""
+    Are you sure you want to continue with these country codes?
+    {', '.join(country_codes)}
+
+    Press Y to continue or N to exit: """
+
+    print(prompt, end='', flush=True)
+
+    while True:
+        key = get_key()
+        if key == ('y' or ''):
+            print("\nContinuing...")
+            return country_codes
+        else:
+            print("\nExiting...")
+            sys.exit(0)
 
 if __name__ == "__main__":
     args = parse_arguments()
@@ -526,7 +570,17 @@ if __name__ == "__main__":
     print_initial_info(args)
     
     # Handle countries from arguments
-    countries_to_scrape = args.country if args.country else COUNTRIES
+    # countries_to_scrape = args.country if args.country else COUNTRIES
+    country_codes = None
+    if not args.country:
+        country_codes = Input_Country()
+    
+    countries_to_scrape = None
+    if country_codes:
+        countries_to_scrape = country_codes
+    else:
+        countries_to_scrape = args.country if args.country else COUNTRIES
+    
     invalid_countries = [code for code in countries_to_scrape if get_country_code(code) not in COUNTRIES]
     
     if invalid_countries:
