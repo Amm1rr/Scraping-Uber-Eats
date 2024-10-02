@@ -117,6 +117,22 @@ class GlobalConfig:
     start_time: float = None
     data: Dict[str, any] = {"country": "", "cities": []}
 
+
+def exit_program(error_number = 0):
+    # End time logging
+    if error_number == 0:
+        if GlobalConfig.start_time:
+            end_time = time.time()
+            elapsed_time = end_time - GlobalConfig.start_time
+            logging.info(f"{'Total elapsed time: ':<30} {elapsed_time:.2f} seconds.")
+            logging.info(f"{'Scraping ended at:':<30} {time.ctime(end_time)}")
+        
+        exit(error_number)
+    else:
+        print("Script ended unsuccessfully.")
+        exit(error_number)
+        
+
 def get_random_user_agent() -> str:
     """Returns a random user agent from the list."""
     return random.choice(USER_AGENTS)
@@ -131,7 +147,7 @@ def cleanup_json_file():
         try:
             with open(GlobalConfig.current_file, 'r+') as f:
                 content = f.read().rstrip().rstrip(',')
-                if content.endswith('{') or content.endswith('['):
+                if content.endswith('{') or content.endswith('[') or content.endswith(','):
                     content = content[:-1]
                 elif not (content.endswith('}') or content.endswith(']')):
                     content += '}'
@@ -179,7 +195,7 @@ def interrupt_handler(signum, frame):
     # Log the summary before exiting
     log_summary()  # Call the new summary logging function
 
-    sys.exit(0)  # Exit the program gracefully
+    exit_program(0)  # Exit the program gracefully
 
 # Register the interrupt handler
 signal.signal(signal.SIGINT, interrupt_handler)
@@ -561,7 +577,7 @@ def Input_Country():
             return country_codes
         else:
             print("\nExiting...")
-            sys.exit(0)
+            exit_program(0)
 
 if __name__ == "__main__":
     args = parse_arguments()
@@ -619,8 +635,5 @@ if __name__ == "__main__":
                 break
             scrape_country(country_code)
 
-    # End time logging
-    end_time = time.time()
-    elapsed_time = end_time - GlobalConfig.start_time
-    logging.info(f"Scraping ended at: {time.ctime(end_time)}")
-    logging.info(f"Total elapsed time: {elapsed_time:.2f} seconds.")
+    exit_program(0)
+
