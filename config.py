@@ -41,6 +41,12 @@ LOGGING_CONFIG = {
 }
 
 def setup_logging(args):
+    
+    # Disable the warnings from urllib3
+    # Raise the logging level for urllib3 to suppress the "Retrying" messages
+    # requests.packages.urllib3.disable_warnings()
+    logging.getLogger("urllib3.connectionpool").setLevel(logging.ERROR)
+    
     if args.debug:
         LOGGING_CONFIG['handlers']['file_handler']['level'] = logging.DEBUG
         LOGGING_CONFIG['loggers']['']['level'] = logging.DEBUG
@@ -76,3 +82,11 @@ COUNTRIES = [
     "de", "gt", "ie", "jp", "ke", "mx", "nl", "nz", "pa", "pl",
     "pt", "za", "es", "lk", "se", "ch", "tw", "gb"
 ]
+
+class VerboseFilter(logging.Filter):
+    def __init__(self, verbose):
+        super().__init__()
+        self.verbose = verbose
+
+    def filter(self, record):
+        return self.verbose
