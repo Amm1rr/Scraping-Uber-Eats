@@ -121,7 +121,7 @@ class GlobalConfig:
     cancel_requested:   bool  = False
     start_time:         float = None
     IsConnectionsAvailable    = True
-    retry_time_on_connection_fail: int = 1
+    retry_time_on_connection_fail: int = 3
     data: Dict[str, any] = {"country": "", "cities": []}
 
 
@@ -136,7 +136,7 @@ def exit_program(error_number = 0):
         
         exit(error_number)
     else:
-        print("Script ended unsuccessfully.")
+        print("Script ended unsuccessfully.{:<30}")
         exit(error_number)
         
 
@@ -681,7 +681,7 @@ if __name__ == "__main__":
             # Load existing data before resuming
             file_path = f"countries/{normalized_country_code}.json"
             
-            data, error_info = load_existing_data(file_path)
+            data = load_existing_data(file_path)
             EMPTY_DATA_STRUCTURE = {"country": "", "cities": []}
 
             if data:
