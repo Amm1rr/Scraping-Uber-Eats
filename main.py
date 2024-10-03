@@ -26,7 +26,6 @@ class GlobalConfig:
     retry_time_on_connection_fail: int = 3
     data: Dict[str, any] = {"country": "", "cities": []}
 
-
 def exit_program(error_number = 0, show_message = True):
     # End time logging
     if error_number == 0:
@@ -56,9 +55,17 @@ def get_random_user_agent() -> str:
 
 def cleanup_json_file():
     """Cleans up the current JSON file by removing trailing commas."""
-    if GlobalConfig.current_file:
-        try:
-            with open(GlobalConfig.current_file, 'r+') as f:
+    try:
+        if isinstance(GlobalConfig.current_file, list):
+            file_path = f"countries/{GlobalConfig.current_file[0]}.json"
+            GlobalConfig.current_file = (file_path, GlobalConfig.data)
+        else:
+            file_path = GlobalConfig.current_file
+        
+        file_path = str(file_path)
+        
+        if os.path.exists(file_path):
+            with open(file_path, 'r+') as f:
                 content = f.read().rstrip().rstrip(',')
                 if content.endswith('{') or content.endswith('['):
                     content = content[:-1]
@@ -68,15 +75,20 @@ def cleanup_json_file():
                 f.write(content)
                 f.truncate()
             
-            msg = [
-            f"Successfully cleaned up JSON file: {GlobalConfig.current_file}"
+            message = [
+            f"Successfully cleaned up JSON file : {GlobalConfig.current_file}"
             ]
             
-            for message in msg:
-                logging.info(message)
-        
-        except Exception as e:
-            logging.error(f"Error cleaning up JSON file {GlobalConfig.current_file}: {e}")
+            for msg in message:
+                logging.info(msg)
+            
+        else:
+            logging.error(f"Unsuccessfull cleaned up JSON. File not found : {file_path}")
+            print_to_console(f"Unsuccessfull cleaned up JSON. File not found : {file_path}")
+    
+    except Exception as e:
+        logging.error(f"Error cleaning up JSON file {GlobalConfig.current_file}: {e}")
+        print_to_console(f"Error cleaning up JSON file {GlobalConfig.current_file}: {e}")
 
 def get_country_code(code: str) -> str:
     """Normalize country code, converting 'uk' to 'gb' if necessary."""
@@ -153,15 +165,16 @@ def log_failed_link(country_code: str, city_name: str, link: str = None):
         
         if not existing_city:
             # Add the city with an empty shops list in the data structure
-            GlobalConfig.data["cities"].append({"city": city_name.strip(), "shops": []})
-            save_data(f"countries/{normalized_country_code}.json", GlobalConfig.data)
+            logging.info(f" Kept  : {city_name:<30} {'for':<5} later")
+            GlobalConfig.data["cities"].append({"city": city_name.strip(), "link": link.strip(), "shops": []})
+            save_data(f"countries/{normalized_country_code}.json", GlobalConfig.data, False)
         
         with open(failed_links_file, 'w') as f:
             json.dump(failed_data, f, indent=4)
         
         return True
     except Exception as e:
-        print("PRINT : log failed\n\n", e)
+        print("PRINT log_failed_link : log failed\n\n", e)
         return False
 
 def load_existing_data(file_path: str) -> Dict:
@@ -196,12 +209,13 @@ def load_existing_data(file_path: str) -> Dict:
         logging.error(f"{error_msg}. Returning default data.")
         return None
 
-def save_data(file_path: str, data: Dict):
+def save_data(file_path: str, data: Dict, show_log: bool = True) -> bool:
     """Saves data to the specified JSON file."""
     try:
-        GlobalConfig.current_file = file_path
+        GlobalConfig.current_file = file_path  # Update the current file path in GlobalConfig
         with open(file_path, "w", encoding="utf-8") as file:
             json.dump(data, file, indent=4)
+        if show_log : logging.info(f"Data successfully saved to {file_path}.")
         return True
     except Exception as e:
         logging.error(f"Error saving data to {file_path}: {e}")
@@ -241,7 +255,7 @@ def resume_failed_scraping(country_code: str):
                         break
                 
                 # Save the updated main GlobalConfig.data file
-                save_data(f"countries/{country_code}.json", GlobalConfig.data)
+                save_data(f"countries/{country_code}.json", GlobalConfig.data, False)
                 
                 # Remove successful link from failed_data
                 failed_data[country_code][city_name].remove(link)
@@ -257,34 +271,6 @@ def resume_failed_scraping(country_code: str):
                 # Remove the file if no failed links remain
                 if not failed_data[country_code]:
                     os.remove(failed_links_file)
-
-def update_main_data(city_name: str, shops: List[Dict], country_code: str):
-    """Updates the main GlobalConfig.data structure with new shop information."""
-    
-    try:
-        normalized_city_name = city_name.strip().lower()
-        
-        existing_city = next((city for city in GlobalConfig.data["cities"] if city["city"].strip().lower() == normalized_city_name), None)
-        
-        if existing_city:
-            # Update existing city with new shops
-            existing_shops = {shop["link"]: shop for shop in existing_city["shops"]}
-            for shop in shops:
-                if shop["link"] not in existing_shops:
-                    existing_city["shops"].append(shop)
-            logging.debug(f"Updated existing city: {city_name} with {len(shops)} new shops.")
-        else:
-            # Create a new entry for the city
-            new_city_data = {"city": city_name.strip(), "shops": shops}
-            GlobalConfig.data["cities"].append(new_city_data)
-            logging.debug(f"Added new city: {city_name} with {len(shops)} shops.")
-        
-        # Save the updated GlobalConfig.data
-        save_data(f"countries/{country_code}.json", GlobalConfig.data)
-        return True
-    except Exception as e:
-        logging.error(f"Error updating main GlobalConfig.data: {str(e)}")
-        return False
 
 def get_session():
     """Creates a session with retry logic."""
@@ -403,65 +389,118 @@ def scrape_country(country_code: str):
     
     GlobalConfig.data["country"] = country
     logging.info(f"Scraping {country}...")
+    print_to_console(f"Scraping {country}...")
     
     # Scrape cities from the country
-    url = f"https://www.ubereats.com/{normalized_country_code}/location"
+    url_country = f"https://www.ubereats.com/{normalized_country_code}/location"
     try:
         time.sleep(random.uniform(0.5, 1.5))  # Random sleep
         GlobalConfig.IsConnectionsAvailable = True
         session = get_session()
-        response = session.get(url, headers=headers, timeout=10)
+        response = session.get(url_country, headers=headers, timeout=10)
         response.raise_for_status()
     except requests.exceptions.ConnectionError as e:
         logging.warning(f"Scrape_Country:get_session : Connection error while scraping {country}")
         GlobalConfig.IsConnectionsAvailable = False
-        log_failed_link(normalized_country_code, country, url)
+        # log_failed_link(normalized_country_code, country, url_country)
         return
     except requests.exceptions.Timeout as e:
         logging.warning(f"Scrape_Country:get_session : Timeout error while scraping {country}")
         GlobalConfig.IsConnectionsAvailable = False
-        log_failed_link(normalized_country_code, country, url)
+        # log_failed_link(normalized_country_code, country, url_country)
         return
     except requests.exceptions.HTTPError as e:
         logging.error(f"Scrape_Country:get_session : HTTP error while scraping {country}")
         GlobalConfig.IsConnectionsAvailable = False
-        log_failed_link(normalized_country_code, country, url)
+        # log_failed_link(normalized_country_code, country, url_country)
         return
     except requests.exceptions.RequestException as e:
         logging.error(f"Scrape_Country:get_session : An error occurred while scraping {country}: {e}")
-        log_failed_link(normalized_country_code, country, url)
+        # log_failed_link(normalized_country_code, country, url_country)
         return
 
-    soup = BeautifulSoup(response.content, "html.parser")
-    links = soup.find_all('a')
-    cities_to_scrape = []
+    soup_all_Cities = BeautifulSoup(response.content, "html.parser")
+    Cities_Country = soup_all_Cities.find_all('a')
+    shop_count = 0
+    is_city_exist = False
+    is_update = False
     
-    for link in links:
+    # Initialize the main data structure
+    data_to_save = {
+        "country": normalized_country_code,
+        "cities": []
+    }
+    
+    for city in Cities_Country:
         if GlobalConfig.cancel_requested:
             return
-        href = link.get('href')
-        name = link.get_text().strip()
+        href = city.get('href')
+        name = city.get_text().strip()
         if href and href.startswith(f"/{normalized_country_code}/city"):
+            shop_count += 1
             city_url = f"https://www.ubereats.com{href}"
-            # Check if the city has already been scraped
-            existing_city = next((city for city in GlobalConfig.data["cities"] if city["city"] == name), None)
-            if existing_city:
-                logging.info(f"Exist : {name:<30} Skipping")
-                continue
-            cities_to_scrape.append((city_url, name))
-
-    if not cities_to_scrape:
-        logging.warning(f"No cities found for {country}. This might indicate an error in fetching the links.")
-        # log_failed_link(normalized_country_code, country, url)  # Log the country URL if no cities are found
+            is_city_exist = False
+            # Check if the city has already been scraped or link is empty for update link
+            for city_detail in GlobalConfig.data["cities"]:
+                if city_detail.get("city") == name:
+                    is_city_exist = True
+                    if not city_detail.get("link"):
+                        is_update = True
+                        city_detail["link"] = "TEST"
+                        logging.info(f"Updated link : {city_detail['city']:<30}: {city_url}")
+                    else:
+                        # logging.info(f"Exist : {name:<30} Skipping")
+                        pass
+                    
+                    continue
+            
+            if is_city_exist: continue
+            
+            # Create a new city entry with an empty shops list
+            new_city_entry = {
+                "city": name,
+                "link": city_url,
+                "shops": []
+            }
+            
+            logging.info(f"Extracted Shop : {shop_count} {name:<30}")
+            data_to_save["cities"].append(new_city_entry)
+            GlobalConfig.data["cities"].append(new_city_entry)
+    
+    if GlobalConfig.data["cities"] and shop_count < 1:
+        logging.warning(f"No cities found for {normalized_country_code}. This might indicate an error in fetching the links.")
+        print_to_console(f"No cities found for {normalized_country_code}. This might indicate an error in fetching the links.")
+        return
+    
+    if shop_count > 0 or is_update:
+        if not save_data(file_path, GlobalConfig.data, True):
+            logging.error("Failed to save data after adding a new city.")
+            print_to_console("Failed to save data after adding a new city.")
     
     if GlobalConfig.cancel_requested: return
+    
+    # Country_Page = load_existing_data(file_path)
+    # if Country_Page:
+    #     GlobalConfig.data = Country_Page
+    # else:
+    #     error_message = f"Error : Country file is empty or invalid  (2): {file_path}"
+    #     logging.WARN(error_message)
+    #     print_to_console(error_message)
+    #     return error_message
 
     # Scrape each city in parallel using threads
     try:
         with ThreadPoolExecutor(max_workers=args.threads) as executor:
-            future_to_city = {executor.submit(scrape_city, city_url, name, headers, normalized_country_code): (city_url, name) for city_url, name in cities_to_scrape}
+            
+            future_to_city = {
+                executor.submit(scrape_city, city["link"], city["city"], headers, normalized_country_code): (city["link"], city["city"])
+                for city in GlobalConfig.data['cities']
+            }
+            
             for future in as_completed(future_to_city):
                 if GlobalConfig.cancel_requested:
+                    print_to_console("\n\nCANCEL 1\n\n")
+                    log_failed_link(normalized_country_code, country, url_country)
                     executor.shutdown(wait=False)
                     return
                 city_url, name = future_to_city[future]
@@ -469,17 +508,25 @@ def scrape_country(country_code: str):
                     shops = future.result()
                     if not shops:
                         log_failed_link(normalized_country_code, name, city_url)
-                        logging.info(f" Keep : {name:<30} {'for':<5} later")
                         return
                     
-                    city_data = {
+                    city_shop_data = {
                         "city": name,
+                        "link": city_url,
                         "shops": shops
                     }
                     
-                    GlobalConfig.data["cities"].append(city_data)
+                    city_found = False
+                    for city_detail in GlobalConfig.data["cities"]:
+                        if city_detail.get("city") == name:
+                            city_found = True
+                            city_detail["shops"] = shops
+                            continue
+                    if not city_found:
+                        print("ERROR:CITY_NOT_FOUND")
+                        GlobalConfig.data["cities"].append(city_shop_data)
                     
-                    save_data(file_path, GlobalConfig.data)
+                    save_data(file_path, GlobalConfig.data, False)
                     logging.info(f" Saved : {name:<30} {'in':<5} {country}")
                 except Exception as exc:
                     logging.error(f"An error occurred while processing country INSIDE {name}: {exc}")
@@ -489,23 +536,23 @@ def scrape_country(country_code: str):
     except requests.exceptions.ConnectionError as e:
         logging.warning(f"Scrape_Country:Get City : Connection error while scraping country {country}")
         GlobalConfig.IsConnectionsAvailable = False
-        log_failed_link(normalized_country_code, country, url)
+        log_failed_link(normalized_country_code, country, url_country)
     except requests.exceptions.Timeout as e:
         logging.warning(f"Scrape_Country:Get City : Timeout error while scraping country {country}")
         GlobalConfig.IsConnectionsAvailable = False
-        log_failed_link(normalized_country_code, country, url)
+        log_failed_link(normalized_country_code, country, url_country)
     except requests.exceptions.HTTPError as e:
         logging.error(f"Scrape_Country:Get City : HTTP error while scraping country {country}")
         GlobalConfig.IsConnectionsAvailable = False
-        log_failed_link(normalized_country_code, country, url)
+        log_failed_link(normalized_country_code, country, url_country)
     except Exception as exc:
         logging.error(f"Scrape_Country:Get City : An error occurred while processing country {country}: {exc}")
-        log_failed_link(normalized_country_code, country, url)
+        log_failed_link(normalized_country_code, country, url_country)
     finally:
         if not GlobalConfig.cancel_requested:
             logging.info(f"All data for {country} has been saved to {file_path}")
 
-def Console_log(args):
+def config_Console_log(args):
     console_handler = logging.StreamHandler()
     console_handler.setLevel(logging.INFO)
     console_handler.setFormatter(logging.Formatter('%(levelname)s - %(message)s'))
@@ -570,7 +617,7 @@ def Input_Country():
 if __name__ == "__main__":
     args = utils.parse_arguments()
     config.setup_logging(args)
-    Console_log(args)
+    config_Console_log(args)
     print_initial_info(args)
     
     # Handle countries from arguments
